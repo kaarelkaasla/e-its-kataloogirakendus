@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>E-ITS 2024 kataloogirakendus</title>
+    <meta name="theme-color" content="#888888">
+    <style>
+        /* General body styling */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 16px;
+        }
+
+        h1 {
+            margin-bottom: 0.25em;
+        }
+
+        /* Filters section styling */
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2em;
+            margin-bottom: 1em;
+        }
+
+        .filter-block {
+            border: 1px solid #ccc;
+            padding: 1em;
+            max-width: 300px;
+        }
+
+        .filter-block h2 {
+            margin-top: 0;
+            font-size: 1.1em;
+            background-color: #eee;
+            padding: 0.4em;
+            margin-bottom: 0.8em;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .filter-block h2 label {
+            font-weight: normal;
+            cursor: pointer;
+            margin-left: 1em;
+            white-space: nowrap;
+        }
+
+        .filter-block label {
+            display: block;
+            margin-bottom: 0.3em;
+            cursor: pointer;
+        }
+
+        /* Search input styling */
+        .search-row {
+            margin-top: 1em;
+        }
+
+        input[type="search"] {
+            width: 240px;
+            padding: 0.3em;
+            font-size: 1em;
+        }
+
+        /* Results table styling */
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 1em;
+        }
+
+        table, th, td {
+            border: 1px solid #333;
+        }
+
+        th, td {
+            padding: 6px;
+        }
+
+        th {
+            background: #eee;
+        }
+    </style>
+</head>
+<body>
+<h1>E-ITS 2024 kataloogirakendus</h1>
+
+<div class="filters">
+    <div class="filter-block" id="measures-filter-block">
+        <h2>
+            Meetmete filter
+            <label>
+                <input type="checkbox" id="toggle-measures" checked>
+            </label>
+        </h2>
+        <div>
+            <strong>Turvameetme tase</strong>
+            <div id="level-filters"></div>
+        </div>
+        <div style="margin-top: 1em;">
+            <strong>Elutsükkel</strong>
+            <div id="lifecycle-filters"></div>
+        </div>
+        <div style="margin-top: 1em;">
+            <strong>C I A</strong>
+            <div id="cia-filters"></div>
+        </div>
+    </div>
+
+    <div class="filter-block" id="modules-filter-block">
+        <h2>
+            Moodulite filter
+            <label>
+                <input type="checkbox" id="toggle-modules" checked>
+            </label>
+        </h2>
+        <div>
+            <strong>Kategooria</strong><br>
+            <label>
+                <input type="checkbox" id="filter-sys" checked>
+                Süsteemimoodulid
+            </label>
+            <label>
+                <input type="checkbox" id="filter-proc" checked>
+                Protsessimoodulid
+            </label>
+            <label>
+                <input type="checkbox" id="filter-other" checked>
+                Muu
+            </label>
+        </div>
+        <div style="margin-top: 1em;">
+            <strong>Moodulid</strong>
+            <div id="module-filters"></div>
+        </div>
+    </div>
+
+    <div class="filter-block" id="results-filter-block">
+        <h2>
+            Vastuste filter
+            <label>
+                <input type="checkbox" id="toggle-results" checked>
+            </label>
+        </h2>
+        <label><input type="checkbox" checked> Mooduligrupid</label>
+        <label><input type="checkbox" checked> Moodulid</label>
+
+        <label><input type="checkbox" id="results-measures" checked> Meetmed</label>
+        <label><input type="checkbox" checked> Mooduli eesmärgid</label>
+        <label><input type="checkbox" checked> Mooduli riskid</label>
+        <label><input type="checkbox" checked> Mooduli piirangud</label>
+
+        <label><input type="checkbox" id="results-responsible" checked> Mooduli vastutaja</label>
+        <label><input type="checkbox" id="results-assignee" checked> Meetmete kaasvastutaja</label>
+        <label><input type="checkbox" id="results-threats" checked> Meetmete alusohud</label>
+        <label><input type="checkbox" id="results-iso" checked> ISO27001 vastavus</label>
+
+        <label><input type="checkbox" checked> Profiilid</label>
+    </div>
+
+    <div class="filter-block" id="roles-filter-block">
+        <h2>
+            Rollide filter
+            <label>
+                <input type="checkbox" id="toggle-roles" checked>
+            </label>
+        </h2>
+        <div id="assignee-filters"></div>
+    </div>
+</div>
+
+<div class="filter-block" style="max-width: 300px;">
+    <h2>Märksõna</h2>
+    <div class="search-row">
+        <input id="searchInput" type="search" placeholder="Otsi...">
+        <button id="searchBtn">Otsi »</button>
+    </div>
+</div>
+
+<table id="resultsTable" width="1415" border="1">
+    <thead></thead>
+    <tbody></tbody>
+</table>
+
+<script>
+    /******************************************************
+     * Data storage
+     ******************************************************/
+    let dataFilters = [];
+    let dataContent = [];
+
+    const measureTagsMap = new Map();
+    const measureIsoMap = new Map();
+    const measureThreatsMap = new Map();
+
+    let loadedFilters = false;
+    let loadedContent = false;
+
+    /******************************************************
+     * On page load, fetch both JSON files
+     ******************************************************/
+    window.addEventListener("DOMContentLoaded", () => {
+        fetch("data/profile_combo_250107.json")
+            .then(response => response.json())
+            .then(json => {
+                dataFilters = json;
+                dataFilters.forEach(obj => {
+                    if (obj.measure) {
+                        const measureKey = obj.measure;
+                        measureTagsMap.set(measureKey, obj.tags || "");
+                        measureIsoMap.set(measureKey, obj.iso || "");
+                        measureThreatsMap.set(measureKey, obj.threats || "");
+                    }
+                });
+                loadedFilters = true;
+                if (loadedContent) initFiltersAndUI();
+            })
+            .catch(err => console.error("Error loading profile_combo_250107.json:", err));
+
+        fetch("data/2024_eits_l3_250107.json")
+            .then(response => response.json())
+            .then(json => {
+                dataContent = json;
+                loadedContent = true;
+                if (loadedFilters) initFiltersAndUI();
+            })
+            .catch(err => console.error("Error loading 2024_eits_l3_250107.json:", err));
+    });
+
+    /******************************************************
+     * Once both are loaded, build filter UI
+     ******************************************************/
+    function initFiltersAndUI() {
+        buildFilters();
+        attachFilterListeners();
+        filterData();
+    }
+
+    /******************************************************
+     * Build dynamic filter checkboxes
+     ******************************************************/
+    function buildFilters() {
+        const allLevels = dataFilters.map(item => item.level).filter(Boolean);
+        const uniqueLevels = [...new Set(allLevels)];
+
+        const allLifecycles = dataFilters.map(item => item.lifecycle).filter(Boolean);
+        const uniqueLifecycles = [...new Set(allLifecycles)];
+
+        // Dynamically extract unique CIA options
+        const allCia = dataFilters.flatMap(item => {
+            return item.cia ? item.cia.split(";").map(c => c.trim().toUpperCase()) : [];
+        }).filter(Boolean);
+        const uniqueCiaOptions = [...new Set(allCia)];
+
+        // Define the desired order for CIA
+        const ciaOrder = ["C", "I", "A"];
+
+        // Sort CIA options according to the predefined order
+        const sortedCiaOptions = uniqueCiaOptions.sort((a, b) => ciaOrder.indexOf(a) - ciaOrder.indexOf(b));
+
+        const allModules = dataFilters.map(item => {
+            const parts = item.module.split(".");
+            return parts[0];
+        }).filter(Boolean);
+        const uniqueModules = [...new Set(allModules)];
+
+        let allAssignees = [];
+        dataFilters.forEach(item => {
+            if (item.assignee) {
+                item.assignee.split(";").map(a => a.trim()).forEach(a => {
+                    if (a) allAssignees.push(a);
+                });
+            }
+        });
+        const uniqueAssignees = [...new Set(allAssignees)];
+
+        const levelDiv = document.getElementById("level-filters");
+        uniqueLevels.sort().forEach(lvl => {
+            const label = document.createElement("label");
+            label.innerHTML = `<input type="checkbox" value="${lvl}" checked> ${lvl}`;
+            levelDiv.appendChild(label);
+        });
+
+        const lifecycleDiv = document.getElementById("lifecycle-filters");
+        uniqueLifecycles.sort().forEach(lc => {
+            const label = document.createElement("label");
+            label.innerHTML = `<input type="checkbox" value="${lc}" checked> ${lc}`;
+            lifecycleDiv.appendChild(label);
+        });
+
+        const ciaDiv = document.getElementById("cia-filters");
+        sortedCiaOptions.forEach(opt => {
+            const label = document.createElement("label");
+            label.innerHTML = `<input type="checkbox" value="${opt}" checked> ${opt}`;
+            ciaDiv.appendChild(label);
+        });
+
+        const moduleDiv = document.getElementById("module-filters");
+        uniqueModules.sort().forEach(mod => {
+            const label = document.createElement("label");
+            label.innerHTML = `<input type="checkbox" value="${mod}" checked> ${mod}`;
+            moduleDiv.appendChild(label);
+        });
+
+        const assigneeDiv = document.getElementById("assignee-filters");
+        uniqueAssignees.sort().forEach(as => {
+            const label = document.createElement("label");
+            label.innerHTML = `<input type="checkbox" value="${as}" checked> ${as}`;
+            assigneeDiv.appendChild(label);
+        });
+    }
+
+    /******************************************************
+     * Attach event listeners
+     ******************************************************/
+    function attachFilterListeners() {
+        const allCheckboxes = document.querySelectorAll('input[type="checkbox"]');
+        allCheckboxes.forEach(cb => cb.addEventListener("change", filterData));
+
+        document.getElementById("toggle-measures")
+            .addEventListener("change", () => {
+                toggleAllInBlock("measures-filter-block");
+                filterData();
+            });
+        document.getElementById("toggle-modules")
+            .addEventListener("change", () => {
+                toggleAllInBlock("modules-filter-block");
+                filterData();
+            });
+        document.getElementById("toggle-results")
+            .addEventListener("change", () => {
+                toggleAllInBlock("results-filter-block");
+                filterData();
+            });
+        document.getElementById("toggle-roles")
+            .addEventListener("change", () => {
+                toggleAllInBlock("roles-filter-block");
+                filterData();
+            });
+
+        document.getElementById("searchBtn").addEventListener("click", filterData);
+
+        document.getElementById("searchInput").addEventListener("search", filterData);
+    }
+
+    function toggleAllInBlock(blockId) {
+        const container = document.getElementById(blockId);
+        if (!container) return;
+        const togglerId = {
+            "measures-filter-block": "toggle-measures",
+            "modules-filter-block": "toggle-modules",
+            "results-filter-block": "toggle-results",
+            "roles-filter-block": "toggle-roles"
+        }[blockId];
+        const toggler = document.getElementById(togglerId);
+        if (!toggler) return;
+
+        const shouldCheck = toggler.checked;
+        const checkboxes = container.querySelectorAll(`input[type="checkbox"]:not(#${togglerId})`);
+        checkboxes.forEach(cb => {
+            if (!cb.disabled) {
+                cb.checked = shouldCheck;
+            }
+        });
+    }
+
+    /******************************************************
+     * Filtering logic
+     ******************************************************/
+    function filterData() {
+        const showMeasures = document.getElementById("results-measures").checked;
+        const showResponsible = document.getElementById("results-responsible").checked;
+        const showAssignee = document.getElementById("results-assignee").checked;
+        const showIso = document.getElementById("results-iso").checked;
+        const showThreats = document.getElementById("results-threats").checked;
+
+        if (!showMeasures && !showResponsible && !showAssignee) {
+            displayResults([], {
+                searchTerm: "",
+                showMeasures: showMeasures,
+                showResponsible,
+                showAssignee: showAssignee,
+                showIso,
+                showThreats
+            });
+            return;
+        }
+
+        const searchTerm = document.getElementById("searchInput").value.trim().toLowerCase();
+
+        const selectedLevels = getCheckedValues("level-filters");
+        const selectedLifecycles = getCheckedValues("lifecycle-filters");
+        const selectedCias = getCheckedValues("cia-filters");
+        const selectedModules = getCheckedValues("module-filters");
+        const selectedRoles = getCheckedValues("assignee-filters");
+
+        const showSys = document.getElementById("filter-sys").checked;
+        const showProc = document.getElementById("filter-proc").checked;
+        const showOther = document.getElementById("filter-other").checked;
+
+        const filtered = dataContent.filter(item => {
+            if (item.level) {
+                if (!selectedLevels.includes(item.level)) return false;
+            } else {
+                if (selectedLevels.length > 0) return false;
+            }
+
+            if (item.lifecycle) {
+                if (!selectedLifecycles.includes(item.lifecycle)) return false;
+            } else {
+                if (selectedLifecycles.length > 0) return false;
+            }
+
+            if (selectedCias.length === 0) {
+                if (item.cia && item.cia.trim() !== "") return false;
+            } else {
+                if (!item.cia) return false;
+                const itemLetters = item.cia.split(";").map(x => x.trim().toUpperCase()).filter(Boolean);
+                for (let letter of itemLetters) {
+                    if (!selectedCias.includes(letter)) {
+                        return false;
+                    }
+                }
+            }
+
+            if (item.pid) {
+                const modBeforeDot = item.pid.split(".")[0];
+                if (!selectedModules.includes(modBeforeDot)) return false;
+            } else {
+                if (selectedModules.length > 0) return false;
+            }
+
+            const resp = (item.responsible || "").split(";").map(r => r.trim()).filter(Boolean);
+            const assi = (item.assignee || "").split(";").map(r => r.trim()).filter(Boolean);
+            if (selectedRoles.length === 0) {
+                if (resp.length > 0 || assi.length > 0) return false;
+            } else {
+                const matchResp = resp.filter(r => selectedRoles.includes(r));
+                const matchAssi = assi.filter(r => selectedRoles.includes(r));
+                if (matchResp.length === 0 && matchAssi.length === 0) return false;
+            }
+
+            if (searchTerm) {
+                const haystack = (item.mid + " " + item.title + " " + item.content).toLowerCase();
+                if (!haystack.includes(searchTerm)) return false;
+            }
+
+            let tagsStr = measureTagsMap.get(item.mid) || "";
+            tagsStr = tagsStr.toLowerCase();
+            const hasSys = tagsStr.includes("sys:");
+            const hasProc = tagsStr.includes("proc:");
+            const isNeither = (!hasSys && !hasProc);
+
+            let fitsCategory = false;
+            if (hasSys && showSys) fitsCategory = true;
+            if (hasProc && showProc) fitsCategory = true;
+            if (isNeither && showOther) fitsCategory = true;
+            return fitsCategory;
+        });
+
+        displayResults(filtered, {
+            searchTerm,
+            showMeasures: showMeasures,
+            showResponsible,
+            showAssignee: showAssignee,
+            showIso,
+            showThreats
+        });
+    }
+
+    function displayResults(rows, opts) {
+        const {searchTerm, showMeasures: showMeasures, showResponsible, showAssignee: showAssignee, showIso, showThreats} = opts || {};
+
+        const columns = [];
+        columns.push({id: 'index', label: '#'});
+
+        if (showResponsible) {
+            columns.push({id: 'responsible', label: 'Mooduli vastutaja'});
+        }
+        if (showMeasures) {
+            columns.push({id: 'midTitle', label: 'Meetme nimetus'});
+            columns.push({id: 'content', label: 'Meetme sisu'});
+        }
+        if (showAssignee) {
+            columns.push({id: 'assignee', label: 'Kaasvastutaja'});
+        }
+        if (showThreats) {
+            columns.push({id: 'threats', label: 'Meetmete alusohud'});
+        }
+        if (showIso) {
+            columns.push({id: 'iso', label: 'ISO27001 vastavus'});
+        }
+
+        columns.push({id: 'level', label: 'Meetme tase'});
+        columns.push({id: 'lifecycle', label: 'Meetme elutsükkel'});
+
+        const thead = document.querySelector("#resultsTable thead");
+        thead.innerHTML = "";
+        const headRow = document.createElement("tr");
+        columns.forEach(col => {
+            const th = document.createElement("th");
+            th.textContent = col.label;
+            headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+
+        const tbody = document.querySelector("#resultsTable tbody");
+        tbody.innerHTML = "";
+
+        rows.forEach((item, idx) => {
+            const tr = document.createElement("tr");
+            columns.forEach(col => {
+                const td = document.createElement("td");
+                switch (col.id) {
+                    case 'index':
+                        td.textContent = (idx + 1).toString();
+                        break;
+                    case 'responsible':
+                        td.textContent = item.responsible || "";
+                        break;
+                    case 'midTitle':
+                        td.innerHTML = highlightTerm(`${item.mid} ${item.title}`, searchTerm);
+                        break;
+                    case 'content':
+                        td.innerHTML = highlightTerm(convertNewlines(item.content || ""), searchTerm);
+                        break;
+                    case 'assignee':
+                        td.textContent = item.assignee || "";
+                        break;
+                    case 'iso':
+                        td.textContent = measureIsoMap.get(item.mid) || "";
+                        break;
+                    case 'threats':
+                        td.textContent = measureThreatsMap.get(item.mid) || "";
+                        break;
+                    case 'level':
+                        td.textContent = item.level || "";
+                        break;
+                    case 'lifecycle':
+                        td.textContent = item.lifecycle || "";
+                        break;
+                    default:
+                        td.textContent = "";
+                }
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+    }
+
+    function highlightTerm(originalText, searchTerm) {
+        if (!searchTerm) return originalText;
+        const safeTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(safeTerm, 'gi');
+        return originalText.replace(regex, match => `<strong>${match}</strong>`);
+    }
+
+    function convertNewlines(text) {
+        return (text || "").split("[NL]").join("<br>");
+    }
+
+    function getCheckedValues(containerId) {
+        const container = document.getElementById(containerId);
+        if (!container) return [];
+        const inputs = container.querySelectorAll('input[type="checkbox"]');
+        const vals = [];
+        inputs.forEach(inp => {
+            if (inp.checked) {
+                vals.push(inp.value.trim());
+            }
+        });
+        return vals;
+    }
+</script>
+</body>
+</html>
