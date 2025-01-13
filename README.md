@@ -43,7 +43,7 @@ Rakendust saab käivitada **kahel** viisil:
    - Protsessimoodul: `tags` sisaldab prefiksit `proc:`.
    - `muu`: kui kumbagi prefiksit ei leidu.
 - **Moodulid (`module`)**  
-  Dünaamilised kategooriad moodustatakse `module` väljade prefiksite järgi enne esimest punkti. Näiteks `ISMS.1.M1` → `ISMS`.
+  Dünaamilised kategooriad moodustatakse `module` väljade prefiksite järgi enne esimest punkti. Näiteks `ISMS.1` → `ISMS`.
 
 ### 3. Vastuste filter
 - Kasutaja määrab, **millised** tunnused (veerud) on tulemuste tabelis nähtavad.
