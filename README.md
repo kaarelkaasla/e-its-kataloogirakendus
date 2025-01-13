@@ -3,7 +3,7 @@
 See rakendus võimaldab filtreerida ja kuvada turvameetmeid (ja nendega seotud infot) vastavalt kasutaja valitud kriteeriumitele. Sisu tugineb kahele JSON-failile:
 
 1. **profile_combo_250107.json** – sisaldab meetmete täiendavaid metaandmeid (nt `tags`, `iso`, `threats`), mille põhjal rakendus loob filtreid ja rikastab tulemusi.
-2. **2024_eits_l3_250107.json** – sisaldab põhimeetmete andmestikku (nt `mid`, `title`, `content`, `level`, `lifecycle`) ja vastutajaid.
+2. **2024_eits_l3_250107.json** – sisaldab meetmete andmestikku (nt `mid`, `title`, `content`, `level`, `lifecycle`) ja vastutajaid.
 
 ---
 
