@@ -71,23 +71,45 @@
             margin-top: 1em;
         }
 
-        table, th, td {
+        table,
+        th,
+        td {
             border: 1px solid #333;
         }
 
-        th, td {
+        th,
+        td {
             padding: 6px;
         }
 
         th {
             background: #eee;
         }
+
+        /* Message area for showing errors (e.g., fetch or other errors) */
+        #messageArea {
+            margin-top: 1em;
+            padding: 0.5em;
+            border: 1px solid #ccc;
+            background-color: #f8f8f8;
+            display: none;
+        }
+        /* We removed #messageArea.info since it's never used */
+        #messageArea.error {
+            color: #b30000;
+            background-color: #ffe6e6;
+        }
     </style>
 </head>
 <body>
+
 <h1>E-ITS 2024 kataloogirakendus</h1>
 
+<!-- Message area displayed if errors occur -->
+<div id="messageArea"></div>
+
 <div class="filters">
+    <!-- Measures Filter Block -->
     <div class="filter-block" id="measures-filter-block">
         <h2>
             Meetmete filter
@@ -109,6 +131,7 @@
         </div>
     </div>
 
+    <!-- Modules Filter Block -->
     <div class="filter-block" id="modules-filter-block">
         <h2>
             Moodulite filter
@@ -137,6 +160,7 @@
         </div>
     </div>
 
+    <!-- Results Filter Block -->
     <div class="filter-block" id="results-filter-block">
         <h2>
             Vastuste filter
@@ -144,22 +168,16 @@
                 <input type="checkbox" id="toggle-results" checked>
             </label>
         </h2>
-        <label><input type="checkbox" checked> Mooduligrupid</label>
-        <label><input type="checkbox" checked> Moodulid</label>
-
         <label><input type="checkbox" id="results-measures" checked> Meetmed</label>
-        <label><input type="checkbox" checked> Mooduli eesmärgid</label>
-        <label><input type="checkbox" checked> Mooduli riskid</label>
-        <label><input type="checkbox" checked> Mooduli piirangud</label>
-
         <label><input type="checkbox" id="results-responsible" checked> Mooduli vastutaja</label>
         <label><input type="checkbox" id="results-assignee" checked> Meetmete kaasvastutaja</label>
         <label><input type="checkbox" id="results-threats" checked> Meetmete alusohud</label>
         <label><input type="checkbox" id="results-iso" checked> ISO27001 vastavus</label>
-
-        <label><input type="checkbox" checked> Profiilid</label>
+        <label><input type="checkbox" id="results-level" checked> Meetme tase</label>
+        <label><input type="checkbox" id="results-lifecycle" checked> Meetme elutsükkel</label>
     </div>
 
+    <!-- Roles Filter Block -->
     <div class="filter-block" id="roles-filter-block">
         <h2>
             Rollide filter
@@ -171,6 +189,7 @@
     </div>
 </div>
 
+<!-- Keyword Search Section -->
 <div class="filter-block" style="max-width: 300px;">
     <h2>Märksõna</h2>
     <div class="search-row">
@@ -179,400 +198,464 @@
     </div>
 </div>
 
-<table id="resultsTable" width="1415" border="1">
+<!-- Results Table -->
+<table id="resultsTable">
     <thead></thead>
     <tbody></tbody>
 </table>
 
 <script>
-    /******************************************************
-     * Data storage
-     ******************************************************/
-    let dataFilters = [];
-    let dataContent = [];
+    /**
+     * EITSApp encapsulates all functionality for the E-ITS 2024 kataloogirakendus.
+     * It includes data fetching, building filters, and rendering search results.
+     */
+    const EITSApp = {
+        dataFilters: [],
+        dataContent: [],
 
-    const measureTagsMap = new Map();
-    const measureIsoMap = new Map();
-    const measureThreatsMap = new Map();
+        measureTagsMap: new Map(),
+        measureIsoMap: new Map(),
+        measureThreatsMap: new Map(),
 
-    let loadedFilters = false;
-    let loadedContent = false;
+        loadedFilters: false,
+        loadedContent: false,
 
-    /******************************************************
-     * On page load, fetch both JSON files
-     ******************************************************/
-    window.addEventListener("DOMContentLoaded", () => {
-        fetch("data/profile_combo_250107.json")
-            .then(response => response.json())
-            .then(json => {
-                dataFilters = json;
-                dataFilters.forEach(obj => {
-                    if (obj.measure) {
-                        const measureKey = obj.measure;
-                        measureTagsMap.set(measureKey, obj.tags || "");
-                        measureIsoMap.set(measureKey, obj.iso || "");
-                        measureThreatsMap.set(measureKey, obj.threats || "");
+        init() {
+            this.fetchJSON('data/profile_combo_250107.json')
+                .then(json => {
+                    this.dataFilters = json;
+                    this.dataFilters.forEach(obj => {
+                        if (obj.measure) {
+                            const measureKey = obj.measure;
+                            this.measureTagsMap.set(measureKey, obj.tags || '');
+                            this.measureIsoMap.set(measureKey, obj.iso || '');
+                            this.measureThreatsMap.set(measureKey, obj.threats || '');
+                        }
+                    });
+                    this.loadedFilters = true;
+                    if (this.loadedContent) {
+                        this.buildFilters();
+                        this.attachFilterListeners();
+                        this.filterData();
                     }
+                })
+                .catch(err => {
+                    this.showMessage('Error loading profile_combo_250107.json: ' + err.message, 'error');
+                    console.error(err);
                 });
-                loadedFilters = true;
-                if (loadedContent) initFiltersAndUI();
-            })
-            .catch(err => console.error("Error loading profile_combo_250107.json:", err));
 
-        fetch("data/2024_eits_l3_250107.json")
-            .then(response => response.json())
-            .then(json => {
-                dataContent = json;
-                loadedContent = true;
-                if (loadedFilters) initFiltersAndUI();
-            })
-            .catch(err => console.error("Error loading 2024_eits_l3_250107.json:", err));
-    });
-
-    /******************************************************
-     * Once both are loaded, build filter UI
-     ******************************************************/
-    function initFiltersAndUI() {
-        buildFilters();
-        attachFilterListeners();
-        filterData();
-    }
-
-    /******************************************************
-     * Build dynamic filter checkboxes
-     ******************************************************/
-    function buildFilters() {
-        const allLevels = dataFilters.map(item => item.level).filter(Boolean);
-        const uniqueLevels = [...new Set(allLevels)];
-
-        const allLifecycles = dataFilters.map(item => item.lifecycle).filter(Boolean);
-        const uniqueLifecycles = [...new Set(allLifecycles)];
-
-        // Dynamically extract unique CIA options
-        const allCia = dataFilters.flatMap(item => {
-            return item.cia ? item.cia.split(";").map(c => c.trim().toUpperCase()) : [];
-        }).filter(Boolean);
-        const uniqueCiaOptions = [...new Set(allCia)];
-
-        // Define the desired order for CIA
-        const ciaOrder = ["C", "I", "A"];
-
-        // Sort CIA options according to the predefined order
-        const sortedCiaOptions = uniqueCiaOptions.sort((a, b) => ciaOrder.indexOf(a) - ciaOrder.indexOf(b));
-
-        const allModules = dataFilters.map(item => {
-            const parts = item.module.split(".");
-            return parts[0];
-        }).filter(Boolean);
-        const uniqueModules = [...new Set(allModules)];
-
-        let allAssignees = [];
-        dataFilters.forEach(item => {
-            if (item.assignee) {
-                item.assignee.split(";").map(a => a.trim()).forEach(a => {
-                    if (a) allAssignees.push(a);
+            this.fetchJSON('data/2024_eits_l3_250107.json')
+                .then(json => {
+                    this.dataContent = json;
+                    this.loadedContent = true;
+                    if (this.loadedFilters) {
+                        this.buildFilters();
+                        this.attachFilterListeners();
+                        this.filterData();
+                    }
+                })
+                .catch(err => {
+                    this.showMessage('Error loading 2024_eits_l3_250107.json: ' + err.message, 'error');
+                    console.error(err);
                 });
+        },
+
+        /**
+         * Asynchronous helper to fetch JSON from a URL.
+         * Throws an error if the response is not OK (e.g., 404, 500).
+         */
+        async fetchJSON(url) {
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
-        });
-        const uniqueAssignees = [...new Set(allAssignees)];
+            return response.json();
+        },
 
-        const levelDiv = document.getElementById("level-filters");
-        uniqueLevels.sort().forEach(lvl => {
-            const label = document.createElement("label");
-            label.innerHTML = `<input type="checkbox" value="${lvl}" checked> ${lvl}`;
-            levelDiv.appendChild(label);
-        });
+        /**
+         * Build filter checkboxes after dataFilters is populated.
+         */
+        buildFilters() {
+            const uniqueLevels = [...new Set(this.dataFilters.map(item => item.level).filter(Boolean))];
+            const uniqueLifecycles = [...new Set(this.dataFilters.map(item => item.lifecycle).filter(Boolean))];
 
-        const lifecycleDiv = document.getElementById("lifecycle-filters");
-        uniqueLifecycles.sort().forEach(lc => {
-            const label = document.createElement("label");
-            label.innerHTML = `<input type="checkbox" value="${lc}" checked> ${lc}`;
-            lifecycleDiv.appendChild(label);
-        });
+            // Collect CIA values and sort them as C, I, A
+            const allCia = this.dataFilters
+                .flatMap(item => (item.cia ? item.cia.split(';').map(c => c.trim().toUpperCase()) : []))
+                .filter(Boolean);
+            const uniqueCiaOptions = [...new Set(allCia)];
+            const ciaOrder = ['C', 'I', 'A'];
+            const sortedCiaOptions = uniqueCiaOptions.sort((a, b) => ciaOrder.indexOf(a) - ciaOrder.indexOf(b));
 
-        const ciaDiv = document.getElementById("cia-filters");
-        sortedCiaOptions.forEach(opt => {
-            const label = document.createElement("label");
-            label.innerHTML = `<input type="checkbox" value="${opt}" checked> ${opt}`;
-            ciaDiv.appendChild(label);
-        });
+            const uniqueModules = [...new Set(
+                this.dataFilters
+                    .map(item => {
+                        const parts = item.module.split('.');
+                        return parts[0];
+                    })
+                    .filter(Boolean)
+            )];
 
-        const moduleDiv = document.getElementById("module-filters");
-        uniqueModules.sort().forEach(mod => {
-            const label = document.createElement("label");
-            label.innerHTML = `<input type="checkbox" value="${mod}" checked> ${mod}`;
-            moduleDiv.appendChild(label);
-        });
-
-        const assigneeDiv = document.getElementById("assignee-filters");
-        uniqueAssignees.sort().forEach(as => {
-            const label = document.createElement("label");
-            label.innerHTML = `<input type="checkbox" value="${as}" checked> ${as}`;
-            assigneeDiv.appendChild(label);
-        });
-    }
-
-    /******************************************************
-     * Attach event listeners
-     ******************************************************/
-    function attachFilterListeners() {
-        const allCheckboxes = document.querySelectorAll('input[type="checkbox"]');
-        allCheckboxes.forEach(cb => cb.addEventListener("change", filterData));
-
-        document.getElementById("toggle-measures")
-            .addEventListener("change", () => {
-                toggleAllInBlock("measures-filter-block");
-                filterData();
+            let allAssignees = [];
+            this.dataFilters.forEach(item => {
+                if (item.assignee) {
+                    item.assignee.split(';').map(a => a.trim()).forEach(a => {
+                        if (a) allAssignees.push(a);
+                    });
+                }
             });
-        document.getElementById("toggle-modules")
-            .addEventListener("change", () => {
-                toggleAllInBlock("modules-filter-block");
-                filterData();
+            const uniqueAssignees = [...new Set(allAssignees)];
+
+            this.renderFilterCheckboxes('level-filters', uniqueLevels);
+            this.renderFilterCheckboxes('lifecycle-filters', uniqueLifecycles);
+            this.renderFilterCheckboxes('cia-filters', sortedCiaOptions, true);
+            this.renderFilterCheckboxes('module-filters', uniqueModules);
+            this.renderFilterCheckboxes('assignee-filters', uniqueAssignees);
+        },
+
+        /**
+         * Attach event listeners for checkboxes, search, and toggling blocks.
+         */
+        attachFilterListeners() {
+            const allCheckboxes = document.querySelectorAll('input[type="checkbox"]');
+            allCheckboxes.forEach(cb => cb.addEventListener('change', () => this.filterData()));
+
+            document.getElementById('toggle-measures')
+                .addEventListener('change', () => {
+                    this.toggleAllInBlock('measures-filter-block');
+                    this.filterData();
+                });
+            document.getElementById('toggle-modules')
+                .addEventListener('change', () => {
+                    this.toggleAllInBlock('modules-filter-block');
+                    this.filterData();
+                });
+            document.getElementById('toggle-results')
+                .addEventListener('change', () => {
+                    this.toggleAllInBlock('results-filter-block');
+                    this.filterData();
+                });
+            document.getElementById('toggle-roles')
+                .addEventListener('change', () => {
+                    this.toggleAllInBlock('roles-filter-block');
+                    this.filterData();
+                });
+
+            const searchEl = document.getElementById('searchInput');
+            // Limit the search to 50 characters
+            searchEl.addEventListener('input', () => {
+                if (searchEl.value.length > 50) {
+                    searchEl.value = searchEl.value.substring(0, 50);
+                }
             });
-        document.getElementById("toggle-results")
-            .addEventListener("change", () => {
-                toggleAllInBlock("results-filter-block");
-                filterData();
-            });
-        document.getElementById("toggle-roles")
-            .addEventListener("change", () => {
-                toggleAllInBlock("roles-filter-block");
-                filterData();
-            });
 
-        document.getElementById("searchBtn").addEventListener("click", filterData);
+            document.getElementById('searchBtn').addEventListener('click', () => this.filterData());
+            searchEl.addEventListener('search', () => this.filterData());
+        },
 
-        document.getElementById("searchInput").addEventListener("search", filterData);
-    }
+        /**
+         * Render an array of checkbox values into a specified container.
+         */
+        renderFilterCheckboxes(containerId, values, skipSort = false) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            container.innerHTML = '';
 
-    function toggleAllInBlock(blockId) {
-        const container = document.getElementById(blockId);
-        if (!container) return;
-        const togglerId = {
-            "measures-filter-block": "toggle-measures",
-            "modules-filter-block": "toggle-modules",
-            "results-filter-block": "toggle-results",
-            "roles-filter-block": "toggle-roles"
-        }[blockId];
-        const toggler = document.getElementById(togglerId);
-        if (!toggler) return;
-
-        const shouldCheck = toggler.checked;
-        const checkboxes = container.querySelectorAll(`input[type="checkbox"]:not(#${togglerId})`);
-        checkboxes.forEach(cb => {
-            if (!cb.disabled) {
-                cb.checked = shouldCheck;
-            }
-        });
-    }
-
-    /******************************************************
-     * Filtering logic
-     ******************************************************/
-    function filterData() {
-        const showMeasures = document.getElementById("results-measures").checked;
-        const showResponsible = document.getElementById("results-responsible").checked;
-        const showAssignee = document.getElementById("results-assignee").checked;
-        const showIso = document.getElementById("results-iso").checked;
-        const showThreats = document.getElementById("results-threats").checked;
-
-        if (!showMeasures && !showResponsible && !showAssignee) {
-            displayResults([], {
-                searchTerm: "",
-                showMeasures: showMeasures,
-                showResponsible,
-                showAssignee: showAssignee,
-                showIso,
-                showThreats
-            });
-            return;
-        }
-
-        const searchTerm = document.getElementById("searchInput").value.trim().toLowerCase();
-
-        const selectedLevels = getCheckedValues("level-filters");
-        const selectedLifecycles = getCheckedValues("lifecycle-filters");
-        const selectedCias = getCheckedValues("cia-filters");
-        const selectedModules = getCheckedValues("module-filters");
-        const selectedRoles = getCheckedValues("assignee-filters");
-
-        const showSys = document.getElementById("filter-sys").checked;
-        const showProc = document.getElementById("filter-proc").checked;
-        const showOther = document.getElementById("filter-other").checked;
-
-        const filtered = dataContent.filter(item => {
-            if (item.level) {
-                if (!selectedLevels.includes(item.level)) return false;
-            } else {
-                if (selectedLevels.length > 0) return false;
+            if (!skipSort) {
+                values.sort();
             }
 
-            if (item.lifecycle) {
-                if (!selectedLifecycles.includes(item.lifecycle)) return false;
-            } else {
-                if (selectedLifecycles.length > 0) return false;
-            }
+            values.forEach(val => {
+                const label = document.createElement('label');
+                label.innerHTML = `<input type="checkbox" value="${val}" checked> ${val}`;
+                container.appendChild(label);
+            });
+        },
 
-            if (selectedCias.length === 0) {
-                if (item.cia && item.cia.trim() !== "") return false;
-            } else {
-                if (!item.cia) return false;
-                const itemLetters = item.cia.split(";").map(x => x.trim().toUpperCase()).filter(Boolean);
-                for (let letter of itemLetters) {
-                    if (!selectedCias.includes(letter)) {
+        /**
+         * Toggle all checkboxes in a filter block on/off, based on the block's main checkbox.
+         */
+        toggleAllInBlock(blockId) {
+            const container = document.getElementById(blockId);
+            if (!container) return;
+
+            const togglerIdMap = {
+                'measures-filter-block': 'toggle-measures',
+                'modules-filter-block': 'toggle-modules',
+                'results-filter-block': 'toggle-results',
+                'roles-filter-block': 'toggle-roles'
+            };
+            const togglerId = togglerIdMap[blockId];
+            const toggler = document.getElementById(togglerId);
+            if (!toggler) return;
+
+            const shouldCheck = toggler.checked;
+            const checkboxes = container.querySelectorAll(`input[type="checkbox"]:not(#${togglerId})`);
+            checkboxes.forEach(cb => {
+                if (!cb.disabled) {
+                    cb.checked = shouldCheck;
+                }
+            });
+        },
+
+        /**
+         * Main filtering logic, returning only items matching user selections.
+         */
+        filterData() {
+            const showMeasures = document.getElementById('results-measures').checked;
+            const showResponsible = document.getElementById('results-responsible').checked;
+            const showAssignee = document.getElementById('results-assignee').checked;
+            const showIso = document.getElementById('results-iso').checked;
+            const showThreats = document.getElementById('results-threats').checked;
+            const showLevel = document.getElementById('results-level').checked;
+            const showLifecycle = document.getElementById('results-lifecycle').checked;
+
+            // Hide table if no columns selected
+            if (
+                !showMeasures &&
+                !showResponsible &&
+                !showAssignee &&
+                !showIso &&
+                !showThreats &&
+                !showLevel &&
+                !showLifecycle
+            ) {
+                document.getElementById('resultsTable').style.display = 'none';
+                return;
+            }
+            document.getElementById('resultsTable').style.display = 'table';
+
+            const searchTerm = document.getElementById('searchInput').value.trim().toLowerCase();
+
+            const selectedLevels = this.getCheckedValues('level-filters');
+            const selectedLifecycles = this.getCheckedValues('lifecycle-filters');
+            const selectedCias = this.getCheckedValues('cia-filters');
+            const selectedModules = this.getCheckedValues('module-filters');
+            const selectedRoles = this.getCheckedValues('assignee-filters');
+
+            const showSys = document.getElementById('filter-sys').checked;
+            const showProc = document.getElementById('filter-proc').checked;
+            const showOther = document.getElementById('filter-other').checked;
+
+            const filtered = this.dataContent.filter(item => {
+                // Level
+                if (item.level) {
+                    if (!selectedLevels.includes(item.level)) return false;
+                } else if (selectedLevels.length > 0) {
+                    return false;
+                }
+
+                // Lifecycle
+                if (item.lifecycle) {
+                    if (!selectedLifecycles.includes(item.lifecycle)) return false;
+                } else if (selectedLifecycles.length > 0) {
+                    return false;
+                }
+
+                // CIA
+                if (selectedCias.length === 0) {
+                    if (item.cia && item.cia.trim() !== '') return false;
+                } else {
+                    if (!item.cia) return false;
+                    const letters = item.cia.split(';').map(x => x.trim().toUpperCase()).filter(Boolean);
+                    for (const letter of letters) {
+                        if (!selectedCias.includes(letter)) {
+                            return false;
+                        }
+                    }
+                }
+
+                // Module
+                if (item.pid) {
+                    const modBeforeDot = item.pid.split('.')[0];
+                    if (!selectedModules.includes(modBeforeDot)) return false;
+                } else if (selectedModules.length > 0) {
+                    return false;
+                }
+
+                // Roles
+                const resp = (item.responsible || '').split(';').map(r => r.trim()).filter(Boolean);
+                const assi = (item.assignee || '').split(';').map(r => r.trim()).filter(Boolean);
+                if (selectedRoles.length === 0) {
+                    if (resp.length > 0 || assi.length > 0) return false;
+                } else {
+                    const matchResp = resp.filter(r => selectedRoles.includes(r));
+                    const matchAssi = assi.filter(r => selectedRoles.includes(r));
+                    if (matchResp.length === 0 && matchAssi.length === 0) {
                         return false;
                     }
                 }
-            }
 
-            if (item.pid) {
-                const modBeforeDot = item.pid.split(".")[0];
-                if (!selectedModules.includes(modBeforeDot)) return false;
-            } else {
-                if (selectedModules.length > 0) return false;
-            }
-
-            const resp = (item.responsible || "").split(";").map(r => r.trim()).filter(Boolean);
-            const assi = (item.assignee || "").split(";").map(r => r.trim()).filter(Boolean);
-            if (selectedRoles.length === 0) {
-                if (resp.length > 0 || assi.length > 0) return false;
-            } else {
-                const matchResp = resp.filter(r => selectedRoles.includes(r));
-                const matchAssi = assi.filter(r => selectedRoles.includes(r));
-                if (matchResp.length === 0 && matchAssi.length === 0) return false;
-            }
-
-            if (searchTerm) {
-                const haystack = (item.mid + " " + item.title + " " + item.content).toLowerCase();
-                if (!haystack.includes(searchTerm)) return false;
-            }
-
-            let tagsStr = measureTagsMap.get(item.mid) || "";
-            tagsStr = tagsStr.toLowerCase();
-            const hasSys = tagsStr.includes("sys:");
-            const hasProc = tagsStr.includes("proc:");
-            const isNeither = (!hasSys && !hasProc);
-
-            let fitsCategory = false;
-            if (hasSys && showSys) fitsCategory = true;
-            if (hasProc && showProc) fitsCategory = true;
-            if (isNeither && showOther) fitsCategory = true;
-            return fitsCategory;
-        });
-
-        displayResults(filtered, {
-            searchTerm,
-            showMeasures: showMeasures,
-            showResponsible,
-            showAssignee: showAssignee,
-            showIso,
-            showThreats
-        });
-    }
-
-    function displayResults(rows, opts) {
-        const {searchTerm, showMeasures: showMeasures, showResponsible, showAssignee: showAssignee, showIso, showThreats} = opts || {};
-
-        const columns = [];
-        columns.push({id: 'index', label: '#'});
-
-        if (showResponsible) {
-            columns.push({id: 'responsible', label: 'Mooduli vastutaja'});
-        }
-        if (showMeasures) {
-            columns.push({id: 'midTitle', label: 'Meetme nimetus'});
-            columns.push({id: 'content', label: 'Meetme sisu'});
-        }
-        if (showAssignee) {
-            columns.push({id: 'assignee', label: 'Kaasvastutaja'});
-        }
-        if (showThreats) {
-            columns.push({id: 'threats', label: 'Meetmete alusohud'});
-        }
-        if (showIso) {
-            columns.push({id: 'iso', label: 'ISO27001 vastavus'});
-        }
-
-        columns.push({id: 'level', label: 'Meetme tase'});
-        columns.push({id: 'lifecycle', label: 'Meetme elutsükkel'});
-
-        const thead = document.querySelector("#resultsTable thead");
-        thead.innerHTML = "";
-        const headRow = document.createElement("tr");
-        columns.forEach(col => {
-            const th = document.createElement("th");
-            th.textContent = col.label;
-            headRow.appendChild(th);
-        });
-        thead.appendChild(headRow);
-
-        const tbody = document.querySelector("#resultsTable tbody");
-        tbody.innerHTML = "";
-
-        rows.forEach((item, idx) => {
-            const tr = document.createElement("tr");
-            columns.forEach(col => {
-                const td = document.createElement("td");
-                switch (col.id) {
-                    case 'index':
-                        td.textContent = (idx + 1).toString();
-                        break;
-                    case 'responsible':
-                        td.textContent = item.responsible || "";
-                        break;
-                    case 'midTitle':
-                        td.innerHTML = highlightTerm(`${item.mid} ${item.title}`, searchTerm);
-                        break;
-                    case 'content':
-                        td.innerHTML = highlightTerm(convertNewlines(item.content || ""), searchTerm);
-                        break;
-                    case 'assignee':
-                        td.textContent = item.assignee || "";
-                        break;
-                    case 'iso':
-                        td.textContent = measureIsoMap.get(item.mid) || "";
-                        break;
-                    case 'threats':
-                        td.textContent = measureThreatsMap.get(item.mid) || "";
-                        break;
-                    case 'level':
-                        td.textContent = item.level || "";
-                        break;
-                    case 'lifecycle':
-                        td.textContent = item.lifecycle || "";
-                        break;
-                    default:
-                        td.textContent = "";
+                // Keyword
+                if (searchTerm) {
+                    const haystack = (item.mid + ' ' + item.title + ' ' + item.content).toLowerCase();
+                    if (!haystack.includes(searchTerm)) return false;
                 }
-                tr.appendChild(td);
+
+                // Category
+                const tagsStr = (this.measureTagsMap.get(item.mid) || '').toLowerCase();
+                const hasSys = tagsStr.includes('sys:');
+                const hasProc = tagsStr.includes('proc:');
+                const isNeither = (!hasSys && !hasProc);
+
+                return !!((hasSys && showSys) || (hasProc && showProc) || (isNeither && showOther));
             });
-            tbody.appendChild(tr);
-        });
-    }
 
-    function highlightTerm(originalText, searchTerm) {
-        if (!searchTerm) return originalText;
-        const safeTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(safeTerm, 'gi');
-        return originalText.replace(regex, match => `<strong>${match}</strong>`);
-    }
+            this.displayResults(filtered, {
+                searchTerm,
+                showMeasures,
+                showResponsible,
+                showAssignee,
+                showIso,
+                showThreats,
+                showLevel,
+                showLifecycle
+            });
+        },
 
-    function convertNewlines(text) {
-        return (text || "").split("[NL]").join("<br>");
-    }
+        /**
+         * Display the filtered data in the table based on user-selected columns.
+         */
+        displayResults(rows, opts) {
+            const {
+                searchTerm,
+                showMeasures,
+                showResponsible,
+                showAssignee,
+                showIso,
+                showThreats,
+                showLevel,
+                showLifecycle
+            } = opts || {};
 
-    function getCheckedValues(containerId) {
-        const container = document.getElementById(containerId);
-        if (!container) return [];
-        const inputs = container.querySelectorAll('input[type="checkbox"]');
-        const vals = [];
-        inputs.forEach(inp => {
-            if (inp.checked) {
-                vals.push(inp.value.trim());
+            const columns = [{ id: 'index', label: '#' }];
+
+            if (showResponsible) {
+                columns.push({ id: 'responsible', label: 'Mooduli vastutaja' });
             }
-        });
-        return vals;
-    }
+            if (showMeasures) {
+                columns.push({ id: 'midTitle', label: 'Meetme nimetus' });
+                columns.push({ id: 'content', label: 'Meetme sisu' });
+            }
+            if (showAssignee) {
+                columns.push({ id: 'assignee', label: 'Kaasvastutaja' });
+            }
+            if (showThreats) {
+                columns.push({ id: 'threats', label: 'Meetmete alusohud' });
+            }
+            if (showIso) {
+                columns.push({ id: 'iso', label: 'ISO27001 vastavus' });
+            }
+            if (showLevel) {
+                columns.push({ id: 'level', label: 'Meetme tase' });
+            }
+            if (showLifecycle) {
+                columns.push({ id: 'lifecycle', label: 'Meetme elutsükkel' });
+            }
+
+            const thead = document.querySelector('#resultsTable thead');
+            thead.innerHTML = '';
+            const headRow = document.createElement('tr');
+            columns.forEach(col => {
+                const th = document.createElement('th');
+                th.textContent = col.label;
+                headRow.appendChild(th);
+            });
+            thead.appendChild(headRow);
+
+            const tbody = document.querySelector('#resultsTable tbody');
+            tbody.innerHTML = '';
+
+            rows.forEach((item, idx) => {
+                const tr = document.createElement('tr');
+                columns.forEach(col => {
+                    const td = document.createElement('td');
+                    switch (col.id) {
+                        case 'index':
+                            td.textContent = (idx + 1).toString();
+                            break;
+                        case 'responsible':
+                            td.textContent = item.responsible || '';
+                            break;
+                        case 'midTitle':
+                            td.innerHTML = this.highlightTerm(`${item.mid} ${item.title}`, searchTerm);
+                            break;
+                        case 'content':
+                            td.innerHTML = this.highlightTerm(this.convertNewlines(item.content || ''), searchTerm);
+                            break;
+                        case 'assignee':
+                            td.textContent = item.assignee || '';
+                            break;
+                        case 'iso':
+                            td.textContent = this.measureIsoMap.get(item.mid) || '';
+                            break;
+                        case 'threats':
+                            td.textContent = this.measureThreatsMap.get(item.mid) || '';
+                            break;
+                        case 'level':
+                            td.textContent = item.level || '';
+                            break;
+                        case 'lifecycle':
+                            td.textContent = item.lifecycle || '';
+                            break;
+                        default:
+                            td.textContent = '';
+                    }
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+        },
+
+        /**
+         * Highlight a search term in the text by wrapping occurrences in <strong>.
+         */
+        highlightTerm(originalText, searchTerm) {
+            if (!searchTerm) return originalText;
+            const safeTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(safeTerm, 'gi');
+            return originalText.replace(regex, match => `<strong>${match}</strong>`);
+        },
+
+        /**
+         * Convert "[NL]" markers into HTML <br> tags for readability.
+         */
+        convertNewlines(text) {
+            return (text || '').split('[NL]').join('<br>');
+        },
+
+        /**
+         * Gather all checked checkbox values from a given container.
+         */
+        getCheckedValues(containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return [];
+            const inputs = container.querySelectorAll('input[type="checkbox"]');
+            const vals = [];
+            inputs.forEach(inp => {
+                if (inp.checked) {
+                    vals.push(inp.value.trim());
+                }
+            });
+            return vals;
+        },
+
+        /**
+         * Display a message in the #messageArea div (e.g., for errors).
+         */
+        showMessage(msg, level = 'error') {
+            const msgArea = document.getElementById('messageArea');
+            if (!msgArea) return;
+            msgArea.textContent = msg;
+            msgArea.className = '';
+            msgArea.style.display = 'block';
+            msgArea.classList.add(level);
+        }
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+        EITSApp.init();
+    });
 </script>
 </body>
 </html>
