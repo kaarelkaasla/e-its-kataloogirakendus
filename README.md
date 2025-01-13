@@ -56,6 +56,7 @@ Rakendust saab käivitada **kahel** viisil:
 
 ### 5. Märksõna
 - Kasutaja saab sisestada märksõna, mille alusel tehakse **täistekstotsing** väljade `mid`, `title` ja `content` pealt.
+- Maksimaalselt 50 tähemärki.
 - Kui vaste leitakse, kuvatakse see **paksus kirjas** (tag `<strong>`) tulemuste tabelis, et otsingutulemused oleksid silmatorkavad.
 
 ---
